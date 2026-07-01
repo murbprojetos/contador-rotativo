@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contador de Vagas — Rotativo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@500;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0d1117; --s1:#161b22; --s2:#1f2937; --border:#30363d;
+    --esq:#3b82f6; --esq-dim:#1d3a6e; --dir:#f59e0b; --dir-dim:#6b4500;
+    --text:#e6edf3; --muted:#7d8590; --green:#22c55e; --red:#ef4444;
+    --purple:#a855f7; --purple-dim:#3b1f5e; --r:10px;
+  }
+  body { background:var(--bg); color:var(--text); font-family:'Inter',sans-serif;
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    padding:20px 16px 60px; gap:14px; }
+
+  header { width:100%; max-width:860px; display:flex; justify-content:space-between;
+    align-items:center; padding-bottom:14px; border-bottom:1px solid var(--border); }
+  .logo { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.08em; }
+  .logo b { color:var(--esq); }
+
+  .card { width:100%; max-width:860px; background:var(--s1); border:1px solid var(--border);
+    border-radius:var(--r); padding:20px 22px; }
+  .card-label { font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:12px; }
+
+  .setup-grid { display:grid; grid-template-columns:1fr 160px; gap:10px; align-items:end; }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .field-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+  input[type="text"], input[type="time"] {
+    background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    color:var(--text); font-family:'Inter',sans-serif; font-size:15px;
+    padding:10px 14px; outline:none; transition:border-color .15s; width:100%; }
+  input:focus { border-color:var(--esq); }
+
+  /* passagens */
+  .passagem-lista { display:flex; flex-direction:column; gap:6px; }
+  .passagem-item { display:flex; align-items:center; gap:10px; background:var(--s2);
+    border:1px solid var(--border); border-radius:8px; padding:10px 14px;
+    font-family:'JetBrains Mono',monospace; font-size:13px; flex-wrap:wrap; }
+  .passagem-item.atual { border-color:var(--esq); background:#161f30; }
+  .pass-badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+    background:var(--esq-dim); color:var(--esq); border-radius:20px; padding:3px 10px; white-space:nowrap; }
+  .pass-badge.done { background:#1a3a24; color:var(--green); }
+  .pass-hora { color:var(--muted); font-size:12px; }
+  .pass-sep { color:var(--border); }
+  .pass-esq { color:var(--esq); font-weight:700; }
+  .pass-dir { color:var(--dir); font-weight:700; }
+  .pass-total { color:var(--text); font-weight:700; }
+  .pass-label { font-size:11px; color:var(--muted); font-family:'Inter',sans-serif; }
+  .pass-dot { width:6px; height:6px; border-radius:50%; background:var(--border); flex-shrink:0; }
+  .pass-dot.done { background:var(--green); }
+  .pass-dot.atual { background:var(--esq); }
+
+  /* trechos dentro da passagem atual */
+  .trechos-lista { display:flex; flex-direction:column; gap:4px; margin-top:8px; padding-top:8px;
+    border-top:1px solid var(--border); }
+  .trecho-item { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px;
+    background:var(--bg); font-family:'JetBrains Mono',monospace; font-size:12px; }
+  .trecho-badge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+    background:var(--purple-dim); color:var(--purple); border-radius:20px; padding:2px 8px; white-space:nowrap; }
+  .trecho-badge.enc { background:#2a1a10; color:#f97316; }
+
+  /* ctx */
+  .ctx-bar { background:var(--s1); border:1px solid var(--border); border-radius:var(--r);
+    padding:14px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .ctx-rua { font-size:17px; font-weight:700; }
+  .ctx-meta { font-size:12px; color:var(--muted); font-family:'JetBrains Mono',monospace; margin-top:2px; }
+  .ctx-badge { background:var(--esq-dim); color:var(--esq); border-radius:20px; padding:5px 14px;
+    font-size:12px; font-weight:700; white-space:nowrap; }
+  .ctx-trecho { background:var(--purple-dim); color:var(--purple); border-radius:20px; padding:5px 14px;
+    font-size:12px; font-weight:700; white-space:nowrap; }
+
+  /* contadores */
+  .counters { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .counter-block { background:var(--s1); border:2px solid var(--border); border-radius:var(--r);
+    padding:24px 20px; display:flex; flex-direction:column; align-items:center; gap:10px;
+    transition:border-color .1s, box-shadow .1s; user-select:none; }
+  .counter-block.flash-esq { border-color:var(--esq); box-shadow:0 0 0 4px rgba(59,130,246,.15); }
+  .counter-block.flash-dir { border-color:var(--dir); box-shadow:0 0 0 4px rgba(245,158,11,.15); }
+  .c-label { font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+  .esq .c-label { color:var(--esq); } .dir .c-label { color:var(--dir); }
+  .c-key { background:var(--s2); border:1px solid var(--border); border-radius:7px;
+    padding:5px 13px; font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; line-height:1; }
+  .esq .c-key { color:var(--esq); border-color:var(--esq-dim); }
+  .dir .c-key { color:var(--dir); border-color:var(--dir-dim); }
+  .c-value { font-family:'JetBrains Mono',monospace; font-size:80px; font-weight:900; line-height:1; }
+  .esq .c-value { color:var(--esq); } .dir .c-value { color:var(--dir); }
+  .c-sub { font-size:11px; color:var(--muted); }
+
+  .total-bar { background:var(--s1); border:1px solid var(--border); border-radius:var(--r);
+    padding:14px 22px; display:flex; align-items:center; justify-content:space-between; }
+  .total-label { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.08em; }
+  .total-value { font-family:'JetBrains Mono',monospace; font-size:28px; font-weight:900; }
+
+  /* barra de encontro de rua */
+  .enc-bar { background:#1a0f05; border:1px solid #7c3a1a; border-radius:var(--r);
+    padding:12px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .enc-label { font-size:12px; color:#f97316; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .enc-key { background:var(--s2); border:1px solid var(--border); border-radius:7px;
+    padding:5px 12px; font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:700; color:#f97316; }
+  .enc-count { font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:900; color:#f97316; }
+
+  .undo-bar { text-align:center; font-size:12px; font-family:'JetBrains Mono',monospace;
+    color:var(--muted); min-height:16px; transition:color .15s; }
+  .undo-bar.active { color:var(--red); }
+
+  /* botões */
+  .actions { display:flex; gap:10px; flex-wrap:wrap; width:100%; max-width:860px; }
+  .btn { cursor:pointer; border:none; border-radius:8px; font-family:'Inter',sans-serif;
+    font-size:14px; font-weight:600; padding:12px 20px; transition:opacity .15s, transform .1s;
+    white-space:nowrap; flex:1; }
+  .btn:active { transform:scale(.97); }
+  .btn:disabled { opacity:.3; cursor:not-allowed; }
+  .btn-salvar { background:var(--green); color:#0d1117; font-size:15px; padding:14px 24px; }
+  .btn-enc { background:#1a0f05; color:#f97316; border:1px solid #7c3a1a; }
+  .btn-nova-rua { background:var(--esq); color:#fff; }
+  .btn-undo { background:var(--s2); color:var(--text); border:1px solid var(--border); }
+  .btn-export { background:#1f2937; color:var(--green); border:1px solid #1a3a24; }
+  .btn-salvar.pulse { animation:pulse-green 1.8s ease-in-out infinite; }
+  @keyframes pulse-green { 0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} 50%{box-shadow:0 0 0 8px rgba(34,197,94,.18)} }
+
+  /* histórico */
+  .hist-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .hist-table th { text-align:left; padding:8px 12px; background:var(--s2); color:var(--muted);
+    font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; border-bottom:1px solid var(--border); }
+  .hist-table td { padding:9px 12px; border-bottom:1px solid var(--border); font-family:'JetBrains Mono',monospace; }
+  .hist-table tr:last-child td { border-bottom:none; }
+  .hist-table tr:hover td { background:var(--s2); }
+  .td-esq { color:var(--esq); font-weight:700; } .td-dir { color:var(--dir); font-weight:700; }
+  .td-total { color:var(--text); font-weight:700; }
+  .td-badge { background:var(--esq-dim); color:var(--esq); border-radius:20px; padding:2px 9px;
+    font-size:11px; font-family:'Inter',sans-serif; font-weight:700; }
+  .td-badge.done { background:#1a3a24; color:var(--green); }
+  .td-badge.enc { background:#2a1a10; color:#f97316; }
+  .hist-group-sep td { background:var(--s2) !important; color:var(--muted); font-size:11px;
+    font-family:'Inter',sans-serif; font-weight:700; letter-spacing:.05em; padding:6px 12px; }
+  .hist-pass-sep td { background:#0f1823 !important; color:var(--esq); font-size:11px;
+    font-family:'Inter',sans-serif; font-weight:600; padding:5px 12px 5px 24px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">M.URB / <b>Rotativo</b></div>
+  <div class="logo">Contador de Vagas</div>
+</header>
+
+<!-- SETUP -->
+<div class="card" id="setup-card">
+  <div class="card-label">Rua em análise</div>
+  <div class="setup-grid">
+    <div class="field">
+      <div class="field-label">Nome da Rua / Trecho</div>
+      <input type="text" id="input-rua" placeholder="Ex: R. Padre Miguelinho" autocomplete="off">
+    </div>
+    <div class="field">
+      <div class="field-label">Horário do Vídeo</div>
+      <input type="time" id="input-hora">
+    </div>
+  </div>
+  <div id="passagens-container" style="margin-top:16px; display:none;">
+    <div class="card-label" style="margin-bottom:8px;">Passagens desta rua</div>
+    <div class="passagem-lista" id="passagem-lista"></div>
+  </div>
+</div>
+
+<!-- CONTEXTO ATIVO -->
+<div class="ctx-bar" id="ctx-bar" style="display:none;">
+  <div>
+    <div class="ctx-rua" id="ctx-rua">—</div>
+    <div class="ctx-meta" id="ctx-meta">—</div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <div class="ctx-trecho" id="ctx-trecho" style="display:none;">Trecho 1</div>
+    <div class="ctx-badge" id="ctx-badge">Passagem 1</div>
+  </div>
+</div>
+
+<!-- CONTADORES -->
+<div id="contador-section" style="display:none; flex-direction:column; gap:14px; width:100%; max-width:860px;">
+  <div class="counters">
+    <div class="counter-block esq" id="block-esq">
+      <div class="c-label">← Lado Esquerdo</div>
+      <div class="c-key">A</div>
+      <div class="c-value" id="val-esq">0</div>
+      <div class="c-sub">veículos</div>
+    </div>
+    <div class="counter-block dir" id="block-dir">
+      <div class="c-label">Lado Direito →</div>
+      <div class="c-key">D</div>
+      <div class="c-value" id="val-dir">0</div>
+      <div class="c-sub">veículos</div>
+    </div>
+  </div>
+
+  <div class="total-bar">
+    <div class="total-label">Total neste trecho</div>
+    <div class="total-value" id="val-total">0</div>
+  </div>
+
+  <!-- BARRA DE ENCONTRO DE RUA -->
+  <div class="enc-bar">
+    <div>
+      <div class="enc-label">Encontro de Rua</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">TAB ou botão → salva trecho atual e zera para o próximo</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div class="enc-key">TAB</div>
+      <div id="enc-count" class="enc-count" style="display:none;">0 encontros</div>
+      <button class="btn btn-enc" onclick="encontroRua()" id="btn-enc" disabled style="flex:none; padding:10px 16px;">✕ Encontro de Rua</button>
+    </div>
+  </div>
+
+  <div class="undo-bar" id="undo-bar">Backspace para desfazer</div>
+</div>
+
+<!-- AÇÕES -->
+<div class="actions">
+  <button class="btn btn-undo"     id="btn-undo"    onclick="desfazer()"         disabled>⌫ Desfazer</button>
+  <button class="btn btn-salvar"   id="btn-salvar"  onclick="proximaPassagem()">▶ Iniciar</button>
+  <button class="btn btn-nova-rua" id="btn-nova-rua" onclick="novaRua()"         style="display:none">+ Nova Rua</button>
+  <button class="btn btn-export"   id="btn-export"  onclick="exportarXLSX()"    disabled>↓ Exportar .xlsx</button>
+</div>
+
+<!-- HISTÓRICO -->
+<div class="card" id="historico-card" style="display:none;">
+  <div class="card-label">Todos os registros</div>
+  <div id="historico-body"></div>
+</div>
+
+<script>
+// ── Estado ───────────────────────────────────────────────────────────
+let ruaAtiva       = null;
+let horaAtiva      = null;
+let passagemN      = 0;
+let esq = 0, dir = 0;
+let ultimoLado     = null;
+let contando       = false;
+
+// trechos da passagem atual: [{trecho, esq, dir, total, tipo}]
+// tipo: 'trecho' | 'encontro'
+let trechosAtual   = [];   // registros da passagem em andamento
+let trechoN        = 1;    // número do trecho atual
+
+let passagensDaRua = [];   // [{passagem, hora, trechos:[...]}]
+let historico      = [];   // idem, todas as ruas
+
+// ── Iniciar passagem ──────────────────────────────────────────────────
+function iniciar() {
+  const rua  = document.getElementById('input-rua').value.trim();
+  const hora = document.getElementById('input-hora').value;
+  if (!rua)  { alert('Informe o nome da rua.'); document.getElementById('input-rua').focus(); return; }
+  if (!hora) { alert('Informe o horário do vídeo.'); document.getElementById('input-hora').focus(); return; }
+
+  ruaAtiva  = rua;
+  horaAtiva = hora;
+  passagemN = passagensDaRua.length + 1;
+  esq = 0; dir = 0; ultimoLado = null;
+  trechosAtual = [];
+  trechoN = 1;
+  contando = true;
+
+  document.activeElement.blur();
+  mostrarContagem();
+  atualizarBtnPrincipal();
+  atualizarEncBar();
+  renderPassagensDaRua();
+  document.getElementById('passagens-container').style.display = 'block';
+  document.getElementById('btn-nova-rua').style.display = 'none';
+  document.getElementById('btn-enc').disabled = false;
+  atualizarDisplay();
+  atualizarUndo();
+}
+
+// ── Encontro de rua: fecha trecho atual, abre novo ────────────────────
+function encontroRua() {
+  if (!contando) return;
+
+  // Salva o trecho atual
+  trechosAtual.push({ tipo: 'trecho', trecho: trechoN, esq, dir, total: esq + dir });
+  // Salva marcador de encontro
+  trechosAtual.push({ tipo: 'encontro', n: trechosAtual.filter(t => t.tipo === 'encontro').length + 1 });
+
+  trechoN++;
+  esq = 0; dir = 0; ultimoLado = null;
+
+  flashEncontro();
+  atualizarDisplay();
+  atualizarUndo();
+  atualizarEncBar();
+  atualizarCtxTrecho();
+  renderPassagensDaRua();
+}
+
+// ── Próxima passagem: salva passagem atual ────────────────────────────
+function proximaPassagem() {
+  if (!contando) { iniciar(); return; }
+
+  // Salva último trecho em andamento
+  trechosAtual.push({ tipo: 'trecho', trecho: trechoN, esq, dir, total: esq + dir });
+
+  const reg = { rua: ruaAtiva, passagem: passagemN, hora: horaAtiva, trechos: [...trechosAtual] };
+  passagensDaRua.push(reg);
+  historico.push(reg);
+
+  contando = false;
+  esq = 0; dir = 0; ultimoLado = null;
+  trechosAtual = []; trechoN = 1;
+
+  document.getElementById('input-hora').value = '';
+  horaAtiva = null;
+  passagemN++;
+
+  document.getElementById('btn-nova-rua').style.display = 'flex';
+  document.getElementById('btn-export').disabled = false;
+  document.getElementById('btn-enc').disabled = true;
+  document.getElementById('ctx-trecho').style.display = 'none';
+  document.getElementById('enc-count').style.display = 'none';
+
+  document.getElementById('input-hora').focus();
+
+  atualizarDisplay();
+  atualizarUndo();
+  atualizarBtnPrincipal();
+  renderPassagensDaRua();
+  renderHistorico();
+}
+
+// ── Nova Rua ──────────────────────────────────────────────────────────
+function novaRua() {
+  ruaAtiva = null; horaAtiva = null; passagemN = 0;
+  passagensDaRua = []; trechosAtual = []; trechoN = 1;
+  esq = 0; dir = 0; ultimoLado = null; contando = false;
+
+  document.getElementById('input-rua').value  = '';
+  document.getElementById('input-hora').value = '';
+  document.getElementById('passagens-container').style.display = 'none';
+  document.getElementById('passagem-lista').innerHTML = '';
+  document.getElementById('btn-nova-rua').style.display = 'none';
+  document.getElementById('ctx-bar').style.display = 'none';
+  document.getElementById('contador-section').style.display = 'none';
+  document.getElementById('ctx-trecho').style.display = 'none';
+  document.getElementById('enc-count').style.display = 'none';
+  document.getElementById('btn-enc').disabled = true;
+
+  atualizarDisplay();
+  atualizarUndo();
+  atualizarBtnPrincipal();
+  document.getElementById('input-rua').focus();
+}
+
+// ── Mostrar seção de contagem ─────────────────────────────────────────
+function mostrarContagem() {
+  document.getElementById('ctx-rua').textContent   = ruaAtiva;
+  document.getElementById('ctx-meta').textContent  = 'Horário: ' + horaAtiva;
+  document.getElementById('ctx-badge').textContent = 'Passagem ' + passagemN;
+  document.getElementById('ctx-bar').style.display = 'flex';
+  document.getElementById('contador-section').style.display = 'flex';
+  atualizarCtxTrecho();
+}
+
+function atualizarCtxTrecho() {
+  const enc = trechosAtual.filter(t => t.tipo === 'encontro').length;
+  const el  = document.getElementById('ctx-trecho');
+  if (enc > 0) {
+    el.textContent = 'Trecho ' + trechoN;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function atualizarEncBar() {
+  const enc = trechosAtual.filter(t => t.tipo === 'encontro').length;
+  const el  = document.getElementById('enc-count');
+  if (enc > 0) {
+    el.textContent = enc + ' encontro' + (enc > 1 ? 's' : '');
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function flashEncontro() {
+  const bar = document.getElementById('undo-bar');
+  const enc = trechosAtual.filter(t => t.tipo === 'encontro').length;
+  bar.textContent = '✕ Encontro de Rua ' + enc + ' marcado — Trecho ' + trechoN + ' iniciado';
+  bar.style.color = '#f97316';
+  setTimeout(() => { atualizarUndo(); bar.style.color = ''; }, 2000);
+}
+
+// ── Botão principal ───────────────────────────────────────────────────
+function atualizarBtnPrincipal() {
+  const btn = document.getElementById('btn-salvar');
+  if (!contando && passagemN <= 1) {
+    btn.textContent = '▶ Iniciar';
+    btn.classList.remove('pulse');
+  } else if (!contando) {
+    btn.textContent = '▶ Próxima Passagem (' + passagemN + ')';
+    btn.classList.add('pulse');
+  } else {
+    btn.textContent = '✓ Salvar Passagem ' + passagemN;
+    btn.classList.add('pulse');
+  }
+}
+
+// ── Contar ────────────────────────────────────────────────────────────
+function contar(lado) {
+  if (!contando) return;
+  if (lado === 'esq') esq++;
+  else dir++;
+  ultimoLado = lado;
+  flashBloco(lado);
+  atualizarDisplay();
+  atualizarUndo();
+}
+
+function desfazer() {
+  if (!ultimoLado || !contando) return;
+  if (ultimoLado === 'esq' && esq > 0) esq--;
+  else if (ultimoLado === 'dir' && dir > 0) dir--;
+  ultimoLado = null;
+  atualizarDisplay();
+  atualizarUndo();
+}
+
+function atualizarDisplay() {
+  document.getElementById('val-esq').textContent   = esq;
+  document.getElementById('val-dir').textContent   = dir;
+  document.getElementById('val-total').textContent = esq + dir;
+  document.getElementById('btn-undo').disabled = !ultimoLado || !contando;
+}
+
+function atualizarUndo() {
+  const bar = document.getElementById('undo-bar');
+  if (ultimoLado && contando) {
+    const label = ultimoLado === 'esq' ? 'Esquerdo (A)' : 'Direito (D)';
+    bar.textContent = 'Último: Lado ' + label + ' — Backspace para desfazer';
+    bar.classList.add('active');
+  } else if (contando) {
+    bar.textContent = 'A = esquerdo · D = direito · TAB = encontro de rua · Backspace = desfazer';
+    bar.classList.remove('active');
+  } else {
+    bar.textContent = 'Preencha o horário e clique em Próxima Passagem (ou Enter)';
+    bar.classList.remove('active');
+  }
+  document.getElementById('btn-undo').disabled = !ultimoLado || !contando;
+}
+
+function flashBloco(lado) {
+  const el  = document.getElementById(lado === 'esq' ? 'block-esq' : 'block-dir');
+  const cls = lado === 'esq' ? 'flash-esq' : 'flash-dir';
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), 160);
+}
+
+// ── Render passagens da rua ───────────────────────────────────────────
+function renderPassagensDaRua() {
+  const lista = document.getElementById('passagem-lista');
+  let html = '';
+
+  passagensDaRua.forEach(p => {
+    const totalEsq = p.trechos.filter(t=>t.tipo==='trecho').reduce((s,t)=>s+t.esq,0);
+    const totalDir = p.trechos.filter(t=>t.tipo==='trecho').reduce((s,t)=>s+t.dir,0);
+    const nEnc = p.trechos.filter(t=>t.tipo==='encontro').length;
+    html += '<div class="passagem-item">' +
+      '<div class="pass-dot done"></div>' +
+      '<span class="pass-badge done">✓ Passagem ' + p.passagem + '</span>' +
+      '<span class="pass-hora">' + p.hora + '</span>' +
+      '<span class="pass-sep">|</span>' +
+      '<span class="pass-label">Esq</span><span class="pass-esq">' + totalEsq + '</span>' +
+      '<span class="pass-sep">·</span>' +
+      '<span class="pass-label">Dir</span><span class="pass-dir">' + totalDir + '</span>' +
+      '<span class="pass-sep">·</span>' +
+      '<span class="pass-label">Total</span><span class="pass-total">' + (totalEsq+totalDir) + '</span>' +
+      (nEnc > 0 ? '<span class="pass-sep">|</span><span style="font-size:11px;color:#f97316;">✕ ' + nEnc + ' cruzamento' + (nEnc>1?'s':'') + '</span>' : '') +
+    '</div>';
+  });
+
+  if (contando) {
+    const encAtual = trechosAtual.filter(t=>t.tipo==='encontro').length;
+    html += '<div class="passagem-item atual">' +
+      '<div class="pass-dot atual"></div>' +
+      '<span class="pass-badge">⏺ Passagem ' + passagemN + '</span>' +
+      '<span class="pass-hora">' + horaAtiva + '</span>' +
+      '<span class="pass-sep">|</span>' +
+      '<span class="pass-label" style="color:var(--muted)">Trecho ' + trechoN + (encAtual > 0 ? ' · ' + encAtual + ' cruzamento' + (encAtual>1?'s':'') : '') + ' · contando...</span>' +
+    '</div>';
+  }
+
+  lista.innerHTML = html || '<div style="color:var(--muted);font-size:13px;padding:4px 0">Nenhuma passagem salva ainda.</div>';
+}
+
+// ── Histórico ─────────────────────────────────────────────────────────
+function renderHistorico() {
+  if (historico.length === 0) return;
+  document.getElementById('historico-card').style.display = 'block';
+
+  const grupos = {};
+  historico.forEach(r => { if (!grupos[r.rua]) grupos[r.rua] = []; grupos[r.rua].push(r); });
+
+  let html = '<table class="hist-table"><thead><tr>' +
+    '<th>Rua</th><th>Passagem / Trecho</th><th>Horário</th><th>Esq.</th><th>Dir.</th><th>Total</th>' +
+    '</tr></thead><tbody>';
+
+  Object.entries(grupos).forEach(([rua, passagens]) => {
+    html += '<tr class="hist-group-sep"><td colspan="6">' + rua + '</td></tr>';
+    passagens.forEach(p => {
+      const temTrechos = p.trechos.filter(t=>t.tipo==='trecho').length > 1;
+      const totalEsq = p.trechos.filter(t=>t.tipo==='trecho').reduce((s,t)=>s+t.esq,0);
+      const totalDir = p.trechos.filter(t=>t.tipo==='trecho').reduce((s,t)=>s+t.dir,0);
+
+      html += '<tr class="hist-pass-sep"><td colspan="6">↳ Passagem ' + p.passagem + ' — ' + p.hora + (temTrechos ? ' (' + p.trechos.filter(t=>t.tipo==='trecho').length + ' trechos)' : '') + '</td></tr>';
+
+      if (temTrechos) {
+        p.trechos.forEach(t => {
+          if (t.tipo === 'trecho') {
+            html += '<tr>' +
+              '<td style="padding-left:32px;color:var(--muted);font-size:11px;">trecho</td>' +
+              '<td><span class="td-badge">Trecho ' + t.trecho + '</span></td>' +
+              '<td>' + p.hora + '</td>' +
+              '<td class="td-esq">' + t.esq + '</td>' +
+              '<td class="td-dir">' + t.dir + '</td>' +
+              '<td class="td-total">' + t.total + '</td>' +
+            '</tr>';
+          } else {
+            html += '<tr>' +
+              '<td colspan="6" style="padding:4px 12px 4px 32px;color:#f97316;font-size:11px;font-family:Inter,sans-serif;">✕ Encontro de Rua ' + t.n + '</td>' +
+            '</tr>';
+          }
+        });
+        html += '<tr>' +
+          '<td style="padding-left:32px;color:var(--muted);font-size:11px;">total</td>' +
+          '<td><span class="td-badge done">Pass. ' + p.passagem + '</span></td>' +
+          '<td>—</td>' +
+          '<td class="td-esq">' + totalEsq + '</td>' +
+          '<td class="td-dir">' + totalDir + '</td>' +
+          '<td class="td-total">' + (totalEsq+totalDir) + '</td>' +
+        '</tr>';
+      } else {
+        const t = p.trechos[0];
+        html += '<tr>' +
+          '<td style="padding-left:32px;color:var(--muted);font-size:12px;">└</td>' +
+          '<td><span class="td-badge done">Pass. ' + p.passagem + '</span></td>' +
+          '<td>' + p.hora + '</td>' +
+          '<td class="td-esq">' + (t?t.esq:0) + '</td>' +
+          '<td class="td-dir">' + (t?t.dir:0) + '</td>' +
+          '<td class="td-total">' + (t?t.total:0) + '</td>' +
+        '</tr>';
+      }
+    });
+    // média da rua
+    const nP = passagens.length;
+    const mE = (passagens.reduce((s,p)=>s+p.trechos.filter(t=>t.tipo==='trecho').reduce((a,t)=>a+t.esq,0),0)/nP).toFixed(1);
+    const mD = (passagens.reduce((s,p)=>s+p.trechos.filter(t=>t.tipo==='trecho').reduce((a,t)=>a+t.dir,0),0)/nP).toFixed(1);
+    const mT = (passagens.reduce((s,p)=>s+p.trechos.filter(t=>t.tipo==='trecho').reduce((a,t)=>a+t.total,0),0)/nP).toFixed(1);
+    html += '<tr>' +
+      '<td style="padding-left:20px;color:var(--muted);font-size:12px;">média</td>' +
+      '<td style="color:var(--muted);font-size:11px;font-family:Inter,sans-serif;">' + nP + ' passagem' + (nP>1?'s':'') + '</td>' +
+      '<td>—</td>' +
+      '<td class="td-esq">' + mE + '</td><td class="td-dir">' + mD + '</td><td class="td-total">' + mT + '</td>' +
+    '</tr>';
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('historico-body').innerHTML = html;
+}
+
+// ── Exportar XLSX ─────────────────────────────────────────────────────
+function exportarXLSX() {
+  if (historico.length === 0) return;
+  const wb = XLSX.utils.book_new();
+
+  // Aba detalhada (trechos)
+  const dados = [['Rua','Passagem','Horário','Trecho / Encontro','Esq.','Dir.','Total']];
+  historico.forEach(p => {
+    p.trechos.forEach(t => {
+      if (t.tipo === 'trecho') {
+        dados.push([p.rua, 'Passagem ' + p.passagem, p.hora, 'Trecho ' + t.trecho, t.esq, t.dir, t.total]);
+      } else {
+        dados.push([p.rua, 'Passagem ' + p.passagem, p.hora, '--- Encontro de Rua ' + t.n + ' ---', '', '', '']);
+      }
+    });
+  });
+  const ws1 = XLSX.utils.aoa_to_sheet(dados);
+  ws1['!cols'] = [{wch:30},{wch:12},{wch:10},{wch:22},{wch:8},{wch:8},{wch:8}];
+
+  // Aba resumo por passagem
+  const res = [['Rua','Passagem','Horário','Esq. Total','Dir. Total','Total','Nº Trechos','Nº Cruzamentos']];
+  historico.forEach(p => {
+    const trechos = p.trechos.filter(t=>t.tipo==='trecho');
+    const enc     = p.trechos.filter(t=>t.tipo==='encontro').length;
+    const tE = trechos.reduce((s,t)=>s+t.esq,0);
+    const tD = trechos.reduce((s,t)=>s+t.dir,0);
+    res.push([p.rua, 'Passagem ' + p.passagem, p.hora, tE, tD, tE+tD, trechos.length, enc]);
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(res);
+  ws2['!cols'] = [{wch:30},{wch:12},{wch:10},{wch:12},{wch:12},{wch:10},{wch:12},{wch:16}];
+
+  // Aba resumo por rua
+  const ruasU = [...new Set(historico.map(r=>r.rua))];
+  const res2 = [['Rua','Nº Passagens','Média Esq.','Média Dir.','Média Total']];
+  ruasU.forEach(rua => {
+    const ps = historico.filter(r=>r.rua===rua);
+    const n  = ps.length;
+    const mE = (ps.reduce((s,p)=>s+p.trechos.filter(t=>t.tipo==='trecho').reduce((a,t)=>a+t.esq,0),0)/n).toFixed(1);
+    const mD = (ps.reduce((s,p)=>s+p.trechos.filter(t=>t.tipo==='trecho').reduce((a,t)=>a+t.dir,0),0)/n).toFixed(1);
+    const mT = (ps.reduce((s,p)=>s+p.trechos.filter(t=>t.tipo==='trecho').reduce((a,t)=>a+t.total,0),0)/n).toFixed(1);
+    res2.push([rua, n, parseFloat(mE), parseFloat(mD), parseFloat(mT)]);
+  });
+  const ws3 = XLSX.utils.aoa_to_sheet(res2);
+  ws3['!cols'] = [{wch:30},{wch:14},{wch:12},{wch:12},{wch:12}];
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Levantamento Detalhado');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Resumo por Passagem');
+  XLSX.utils.book_append_sheet(wb, ws3, 'Resumo por Rua');
+
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, 'rotativo_contagem_' + stamp + '.xlsx');
+}
+
+// ── Teclado ───────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement.tagName;
+  if (tag === 'TEXTAREA') return;
+
+  if (tag === 'INPUT') {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (document.activeElement.id === 'input-rua') document.getElementById('input-hora').focus();
+      else { document.activeElement.blur(); contando ? proximaPassagem() : iniciar(); }
+    }
+    // Bloqueia TAB nos inputs para não pular campo
+    if (e.key === 'Tab') { e.preventDefault(); }
+    return;
+  }
+
+  if (e.key === 'a' || e.key === 'A')   { e.preventDefault(); contar('esq'); }
+  if (e.key === 'd' || e.key === 'D')   { e.preventDefault(); contar('dir'); }
+  if (e.key === 'Tab')                   { e.preventDefault(); encontroRua(); }
+  if (e.key === 'Backspace')             { e.preventDefault(); desfazer(); }
+  if (e.key === 'Enter')                 { e.preventDefault(); contando ? proximaPassagem() : iniciar(); }
+});
+
+// Corrigir horário durante contagem
+document.getElementById('input-hora').addEventListener('change', () => {
+  if (contando) {
+    const novaHora = document.getElementById('input-hora').value;
+    if (novaHora) { horaAtiva = novaHora; document.getElementById('ctx-meta').textContent = 'Horário: ' + novaHora; renderPassagensDaRua(); }
+  }
+});
+
+// Init
+atualizarBtnPrincipal();
+atualizarUndo();
+</script>
+</body>
+</html>
